@@ -78,6 +78,7 @@ pnpm install
 
 ### Reproduction Evidence
 
+- **Branch link:** [p2rez/medusa — fix/stale-cache-list-invalidation-on-update](https://github.com/p2rez/medusa/tree/fix/stale-cache-list-invalidation-on-update)
 - **Commit showing reproduction:** *To be added — will commit a snapshot of the unmodified `parser.ts` to the branch*
 - **Screenshots/logs:** Confirmed the bug visually in VS Code — `parser.ts` line 236 shows the condition only includes `"created"` and `"deleted"`, with `"updated"` absent
 - **My findings:** Found the exact line causing the issue in `buildAffectedCacheKeys`. Also located the test file at `packages/modules/caching/src/utils/__tests__/parser.test.ts` — there's already a test for the `updated` operation that explicitly asserts the wrong behavior (no list key generated). That test will need to be updated alongside the fix.
