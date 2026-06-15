@@ -3,7 +3,7 @@
 **Contribution Number:** 1  
 **Student:** Christian Perez  
 **Issue:** [medusajs/medusa #14903](https://github.com/medusajs/medusa/issues/14903)  
-**Status:** Phase I — In Progress
+**Status:** Phase II — Complete
 
 ---
 
@@ -42,7 +42,24 @@ Publish a product → the cached response from before the update is still return
 
 ### Environment Setup
 
-*To be filled in during Phase II — will note any issues getting the monorepo running with pnpm.*
+Medusa is a monorepo using pnpm workspaces, so setup is a bit different from a typical Node project. Here's what I installed:
+
+- **nvm** (v0.39.7) — to manage Node versions
+- **Node** v20.20.2 via nvm
+- **pnpm** v10.34.3 — required for the monorepo
+- **git** v2.50.1 (Apple Git-155) — already on Mac
+
+Cloned my fork, added the original repo as `upstream`, and created a feature branch:
+
+```bash
+git clone https://github.com/p2rez/medusa.git
+cd medusa
+git remote add upstream https://github.com/medusajs/medusa.git
+git checkout -b fix/stale-cache-list-invalidation-on-update
+pnpm install
+```
+
+`pnpm install` pulled all packages across the monorepo without issues. No major blockers during setup.
 
 ### Steps to Reproduce
 
@@ -61,9 +78,9 @@ Publish a product → the cached response from before the update is still return
 
 ### Reproduction Evidence
 
-- **Commit showing reproduction:** *Phase II*
-- **Screenshots/logs:** *Phase II*
-- **My findings:** *To be added after I reproduce it locally*
+- **Commit showing reproduction:** *To be added — will commit a snapshot of the unmodified `parser.ts` to the branch*
+- **Screenshots/logs:** Confirmed the bug visually in VS Code — `parser.ts` line 236 shows the condition only includes `"created"` and `"deleted"`, with `"updated"` absent
+- **My findings:** Found the exact line causing the issue in `buildAffectedCacheKeys`. Also located the test file at `packages/modules/caching/src/utils/__tests__/parser.test.ts` — there's already a test for the `updated` operation that explicitly asserts the wrong behavior (no list key generated). That test will need to be updated alongside the fix.
 
 ---
 
@@ -99,15 +116,15 @@ Using UMPIRE framework (adapted):
 
 **Understand:** On `updated` events, `buildAffectedCacheKeys` skips the list wildcard tag. So cached list responses that filtered out the entity never get invalidated, even if the update changes whether the entity should now be included.
 
-**Match:** The fix follows the same pattern already used for `created` and `deleted` — just extending an array check. I'll look at the existing test file for this function to see how tests are structured before writing new ones.
+**Match:** The fix follows the same pattern already used for `created` and `deleted` — just extending an array check. Found the test file at `packages/modules/caching/src/utils/__tests__/parser.test.ts`. There's already a test called `"should include simplified cache keys for updated operation"` that asserts only `["Product:prod_123"]` is returned for `updated` — no list key. That test confirms the bug and will need to be updated to expect `"Product:list:*"` as part of the fix.
 
 **Plan:**
 1. Open `packages/modules/caching/src/utils/parser.ts`
 2. Add `"updated"` to the operation array in `buildAffectedCacheKeys`
 3. Find the existing tests (probably `parser.test.ts`)
-4. Add test cases for the `updated` scenario
-5. Run the test suite locally
-6. Manually verify the fix with the reproduction steps above
+4. Update the existing `"should include simplified cache keys for updated operation"` test in `parser.test.ts` to expect `"Product:list:*"` in the returned cache keys
+5. Run the test suite locally to confirm everything passes
+6. Manually verify with the reproduction steps above
 
 **Implement:** *Commit links added in Phase III*
 
@@ -149,7 +166,9 @@ Picked issue #14903 — stale list cache when caching is enabled. The reporter a
 
 ### Week 2 Progress
 
-*Coming in Phase II — environment setup and reproduction.*
+Got the local environment running — installed nvm, Node v20, and pnpm, then cloned the fork and ran `pnpm install` across the monorepo without issues. Navigated straight to `parser.ts` and confirmed the bug on line 236: the `buildAffectedCacheKeys` condition only includes `"created"` and `"deleted"`, so `"updated"` events never generate the `Entity:list:*` wildcard needed to bust stale list caches.
+
+Also found the test file at `packages/modules/caching/src/utils/__tests__/parser.test.ts`. There's already a test for the `updated` operation — and it explicitly asserts the broken behavior. That means the fix touches two files: the source and the test. Ready to move into Phase III.
 
 ### Code Changes
 
