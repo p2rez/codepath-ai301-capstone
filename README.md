@@ -3,7 +3,7 @@
 **Contribution Number:** 2  
 **Student:** Christian Perez  
 **Issue:** [sorbet/sorbet #9447](https://github.com/sorbet/sorbet/issues/9447)  
-**Status:** Phase III — Complete
+**Status:** Phase IV — Awaiting Review
 
 ---
 
@@ -192,14 +192,14 @@ Implemented the fix. Key decisions made along the way:
 
 ## Pull Request
 
-**PR Link:** *Phase IV — to be opened*
+**PR Link:** [sorbet/sorbet #10394](https://github.com/sorbet/sorbet/pull/10394)
 
-**PR Description:** *Draft being prepared*
+**PR Description:** Added a `postTransformSend` handler to `DefLocSaver` that detects `alias_method` calls and emits a `MethodDefResponse` at the source argument location, so that `textDocument/references` includes alias definitions as references of the original method. Full test suite passes (2243/2243).
 
 **Maintainer Feedback:**
-- *To be updated*
+- *Awaiting review*
 
-**Status:** Branch pushed, ready to open PR
+**Status:** Awaiting review
 
 ---
 
