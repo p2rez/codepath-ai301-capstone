@@ -1,17 +1,17 @@
-# Contribution 1: Stale cache served for list responses with caching feature flag enabled
+# Contribution 2: `textDocument/references` does not treat alias definitions as references of a given symbol
 
-**Contribution Number:** 1  
+**Contribution Number:** 2  
 **Student:** Christian Perez  
-**Issue:** [medusajs/medusa #14903](https://github.com/medusajs/medusa/issues/14903)  
-**Status:** Phase II — Complete
+**Issue:** [sorbet/sorbet #9447](https://github.com/sorbet/sorbet/issues/9447)  
+**Status:** Phase III — Complete
 
 ---
 
 ## Why I Chose This Issue
 
-Caching bugs are tricky because nothing breaks loudly — you just get wrong data and no clue why. That's exactly what's happening here, and I wanted to dig into something that actually requires understanding how the system works rather than just patching an obvious error.
+I wanted something that actually pushed me into unfamiliar territory. C++ is the first language I learned, so the language itself isn't the barrier — but working inside a compiler's LSP implementation is a different beast than typical application code. That's exactly why I picked it.
 
-I'm also trying to get more comfortable reading production codebases I didn't write. This issue already has the root cause pinpointed, so instead of spending all my time hunting for the bug, I can focus on understanding the code structure, writing a proper fix, and learning how the contribution process works in a real project. Good starting point for a first PR.
+The issue is also well-scoped for what it is. It's tagged `good first issue` by a core maintainer, the expected behavior is clearly defined, and there's no ambiguity about what "fixed" looks like. If Find All References on `foo` shows the `alias_method :bar1, :foo` line, it's fixed. That's a clean target.
 
 ---
 
@@ -19,22 +19,26 @@ I'm also trying to get more comfortable reading production codebases I didn't wr
 
 ### Problem Description
 
-When caching is turned on in Medusa, list endpoints like `GET /store/products` can return stale data after an entity gets updated. The cache never gets cleared on updates — so if something changes in a way that affects whether it shows up in a filtered list, users just keep getting the old response until the TTL runs out.
+Sorbet's LSP server implements `textDocument/references`, which powers the "Find All References" feature in editors. When you search for references of a method like `foo`, it should return every place `foo` is referenced — including its alias definitions. Right now, `alias_method :bar1, :foo` is not included in that list even though renaming `foo` would require updating it.
 
 ### Expected Behavior
 
-Publish a product → it shows up in `GET /store/products` immediately.
+Running Find All References on `def foo` should include the `alias_method :bar1, :foo` line as a reference, since `:foo` there is a direct reference to the `foo` symbol that would break if `foo` were renamed.
 
 ### Current Behavior
 
-Publish a product → the cached response from before the update is still returned. The product is missing until the cache expires on its own.
+Find All References on `def foo` returns:
+1. The `def foo` definition itself
+2. Direct call sites like `foo` inside other methods
+
+It does **not** return the `alias_method :bar1, :foo` line, even though `:foo` there is a reference to the same symbol.
 
 ### Affected Components
 
-- **File:** `packages/modules/caching/src/utils/parser.ts`
-- **Function:** `buildAffectedCacheKeys`
-- **Trigger:** Any `*.updated` event where the update changes filter-relevant fields (status, category, sales channel, etc.)
-- **Scope:** Not just products — any entity type with cached list queries that use filters
+- **Language:** C++
+- **Files changed:** `main/lsp/DefLocSaver.cc`, `main/lsp/DefLocSaver.h`
+- **Test added:** `test/testdata/lsp/alias_method_references.rb`
+- **Relevant area:** Sorbet's LSP AST walker that emits query responses for symbol references
 
 ---
 
@@ -42,46 +46,47 @@ Publish a product → the cached response from before the update is still return
 
 ### Environment Setup
 
-Medusa is a monorepo using pnpm workspaces, so setup is a bit different from a typical Node project. Here's what I installed:
+Sorbet uses Bazel as its build system, which was new to me. Here's the full setup on Mac (Apple Silicon):
 
-- **nvm** (v0.39.7) — to manage Node versions
-- **Node** v20.20.2 via nvm
-- **pnpm** v10.34.3 — required for the monorepo
-- **git** v2.50.1 (Apple Git-155) — already on Mac
-
-Cloned my fork, added the original repo as `upstream`, and created a feature branch:
+- **Xcode CLI tools** — already installed (version 2416)
+- **Homebrew** — installed fresh
+- **Bazelisk** — installed via `brew install bazelisk` (handles Bazel version automatically)
+- **Clang** — Apple clang 21.0.0, already present via Xcode
 
 ```bash
-git clone https://github.com/p2rez/medusa.git
-cd medusa
-git remote add upstream https://github.com/medusajs/medusa.git
-git checkout -b fix/stale-cache-list-invalidation-on-update
-pnpm install
+git clone https://github.com/p2rez/sorbet.git
+cd sorbet
+git remote add upstream https://github.com/sorbet/sorbet.git
+git checkout -b fix/lsp-alias-references
+bazel build //main:sorbet  # ~30-60 min first build
 ```
 
-`pnpm install` pulled all packages across the monorepo without issues. No major blockers during setup.
+First build took a while since it compiles the full C++ project from scratch. Subsequent builds were fast (under 10s for single-file changes).
 
 ### Steps to Reproduce
 
-1. Enable caching in `medusa-config`:
-   ```ts
-   featureFlags: {
-     caching: true,
-   }
-   ```
-2. Create a product in **draft** status
-3. Call `GET /store/products` — gets cached, draft product is filtered out
-4. Publish the product via the admin API
-5. Call `GET /store/products` again
+1. Open a Ruby file in an editor with Sorbet's LSP running (or use sorbet.run)
+2. Create a class with a method and an alias:
+   ```ruby
+   # typed: true
+   class A
+     def foo; end
+     alias_method :bar1, :foo
 
-**Result:** Still getting the cached response. Published product doesn't show up.
+     def bar2
+       foo
+     end
+   end
+   ```
+3. Run Find All References on `def foo`
+4. Observe the results
+
+**Result:** Only `def foo` and the `foo` call inside `bar2` are returned. The `alias_method :bar1, :foo` line is missing.
 
 ### Reproduction Evidence
 
-- **Branch link:** [p2rez/medusa — fix/stale-cache-list-invalidation-on-update](https://github.com/p2rez/medusa/tree/fix/stale-cache-list-invalidation-on-update)
-- **Commit showing reproduction:** *To be added — will commit a snapshot of the unmodified `parser.ts` to the branch*
-- **Screenshots/logs:** Confirmed the bug visually in VS Code — `parser.ts` line 236 shows the condition only includes `"created"` and `"deleted"`, with `"updated"` absent
-- **My findings:** Found the exact line causing the issue in `buildAffectedCacheKeys`. Also located the test file at `packages/modules/caching/src/utils/__tests__/parser.test.ts` — there's already a test for the `updated` operation that explicitly asserts the wrong behavior (no list key generated). That test will need to be updated alongside the fix.
+- **Branch link:** [p2rez/sorbet — fix/lsp-alias-references](https://github.com/p2rez/sorbet/tree/fix/lsp-alias-references)
+- **My findings:** `alias_method` gets desugared to a `Send` node in Sorbet's AST — `self.alias_method(:bar1, :foo)`. The `:foo` argument is an `ast::Literal` with its own source location, but Sorbet's `DefLocSaver` (the AST walker that emits LSP query responses) had no handler for `Send` nodes, so the `:foo` argument was never registered as a symbol reference.
 
 ---
 
@@ -89,54 +94,44 @@ pnpm install
 
 ### Analysis
 
-The problem is in `buildAffectedCacheKeys` in `parser.ts`. It decides which cache keys to invalidate when an event fires. Right now, it only adds the list-level wildcard (`Entity:list:*`) for `created` and `deleted`:
+Sorbet's LSP system works by walking the AST via `DefLocSaver` and emitting `QueryResponse` objects when a node matches the current LSP query (either by location or by symbol). The issue was that `alias_method :bar1, :foo` is desugared to a `Send` node before `DefLocSaver` runs, and there was no `postTransformSend` handler to detect it.
 
-```ts
-if (entity.isInArray || ["created", "deleted"].includes(operation)) {
-  keys.add(`${entity.type}:list:*`)
-}
-```
-
-When `product.updated` fires, it only generates a single-entity key like `Product:prod_xyz`. But since that product was never in the cached list (it was filtered out while in draft), nothing with that tag exists in the cache. The list never gets cleared.
+When `textDocument/references` fires for `foo`, the query system never sees the `:foo` argument inside the `alias_method` call — it has no mechanism to emit a response for it.
 
 ### Proposed Solution
 
-Add `"updated"` to that condition:
-
-```ts
-if (entity.isInArray || ["created", "deleted", "updated"].includes(operation)) {
-  keys.add(`${entity.type}:list:*`)
-}
-```
-
-Any update that could affect filter visibility now busts the list cache. Single-entity caches like `Product:prod_123` are untouched.
+Add a `postTransformSend` handler in `DefLocSaver` that:
+1. Detects `alias_method` calls
+2. Looks up the method named by the second argument (`:foo`)
+3. If the LSP query matches that method (either by symbol or by cursor location), emits a `MethodDefResponse` at the `:foo` argument's location
 
 ### Implementation Plan
 
 Using UMPIRE framework (adapted):
 
-**Understand:** On `updated` events, `buildAffectedCacheKeys` skips the list wildcard tag. So cached list responses that filtered out the entity never get invalidated, even if the update changes whether the entity should now be included.
+**Understand:** When `textDocument/references` is called for `foo`, Sorbet's `DefLocSaver` walks the AST emitting responses for matching nodes. `alias_method :bar1, :foo` becomes a `Send` node with `:foo` as a symbol literal argument — but no handler existed for this case.
 
-**Match:** The fix follows the same pattern already used for `created` and `deleted` — just extending an array check. Found the test file at `packages/modules/caching/src/utils/__tests__/parser.test.ts`. There's already a test called `"should include simplified cache keys for updated operation"` that asserts only `["Product:prod_123"]` is returned for `updated` — no list key. That test confirms the bug and will need to be updated to expect `"Product:list:*"` as part of the fix.
+**Match:** `DefLocSaver` already has handlers for `MethodDef`, `UnresolvedIdent`, `ConstantLit`, and `ClassDef`. The pattern is: check if the LSP query matches the node's symbol or location, then push a `QueryResponse`. The new `postTransformSend` follows the same pattern.
 
 **Plan:**
-1. Open `packages/modules/caching/src/utils/parser.ts`
-2. Add `"updated"` to the operation array in `buildAffectedCacheKeys`
-3. Find the existing tests (probably `parser.test.ts`)
-4. Update the existing `"should include simplified cache keys for updated operation"` test in `parser.test.ts` to expect `"Product:list:*"` in the returned cache keys
-5. Run the test suite locally to confirm everything passes
-6. Manually verify with the reproduction steps above
+1. Add `postTransformSend` declaration to `DefLocSaver.h`
+2. Implement it in `DefLocSaver.cc` — detect `alias_method`, look up the source method, emit `MethodDefResponse` at `:foo` location
+3. Add `core/Types.h` include for `core::Types::untyped`
+4. Write LSP test at `test/testdata/lsp/alias_method_references.rb`
+5. Build and verify with `bazel build //main:sorbet`
+6. Run test with `bazel test //test:test_LSPTests/testdata/lsp/alias_method_references`
+7. Run full test suite with `bazel test //test:test`
 
-**Implement:** *Commit links added in Phase III*
+**Implement:** [fix/lsp-alias-references](https://github.com/p2rez/sorbet/tree/fix/lsp-alias-references)
 
 **Review:**
-- [ ] Follows the project's TypeScript style
-- [ ] Existing tests still pass
-- [ ] New tests cover the updated behavior
-- [ ] PR description clearly explains the problem and fix
-- [ ] Checked Medusa's contribution guidelines
+- [x] Follows Sorbet's C++ style conventions
+- [x] Existing tests still pass (2243/2243)
+- [x] New test covers the alias reference case
+- [x] PR description clearly explains what changed and why
+- [x] Checked Sorbet's contribution guidelines
 
-**Evaluate:** Run through the reproduction steps again after the fix — draft product published, verify it shows up immediately in `GET /store/products`.
+**Evaluate:** LSP test passes — Find All References on `foo` now includes the `alias_method :bar1, :foo` line.
 
 ---
 
@@ -144,18 +139,27 @@ Using UMPIRE framework (adapted):
 
 ### Unit Tests
 
-- [ ] `buildAffectedCacheKeys` with `updated` operation generates `Entity:list:*` tag
-- [ ] `buildAffectedCacheKeys` with `updated` still generates the individual entity key (`Entity:id`)
-- [ ] `created` and `deleted` operations still behave the same (regression check)
+- [x] `textDocument/references` on `foo` returns the `alias_method :bar1, :foo` line — `test/testdata/lsp/alias_method_references.rb`
+- [x] `textDocument/references` still returns call sites and the definition (regression) — covered by full test suite
+- [x] No regressions on existing references behavior — 2243/2243 tests pass
 
 ### Integration Tests
 
-- [ ] Caching on: publish a draft product, confirm list cache clears and product appears
-- [ ] Caching on: change a product's category, confirm relevant list cache clears
+- [x] Full LSP test suite passes with no regressions
 
 ### Manual Testing
 
-*To be filled in during Phase II/III.*
+Verified by running the specific LSP test:
+```bash
+bazel test //test:test_LSPTests/testdata/lsp/alias_method_references --config=dbg
+# PASSED in 2.5s
+```
+
+And full suite:
+```bash
+bazel test //test:test --config=dbg
+# Executed 2243 out of 2243 tests: 2243 tests pass.
+```
 
 ---
 
@@ -163,32 +167,39 @@ Using UMPIRE framework (adapted):
 
 ### Week 1 Progress
 
-Picked issue #14903 — stale list cache when caching is enabled. The reporter already identified the exact file and function causing it, which made this a solid pick for a first contribution. Commented on the issue to let maintainers know I'm working on it and set up this journal.
+Picked issue #9447 in sorbet/sorbet — the LSP `textDocument/references` handler doesn't include alias definitions as references of a symbol. Tagged `good first issue` by a core maintainer. C++ is my first language so the implementation side should be manageable. Commented on the issue to claim it and set up this journal.
 
 ### Week 2 Progress
 
-Got the local environment running — installed nvm, Node v20, and pnpm, then cloned the fork and ran `pnpm install` across the monorepo without issues. Navigated straight to `parser.ts` and confirmed the bug on line 236: the `buildAffectedCacheKeys` condition only includes `"created"` and `"deleted"`, so `"updated"` events never generate the `Entity:list:*` wildcard needed to bust stale list caches.
+Got the local environment running. Bazel was new but straightforward once Bazelisk was installed. Built Sorbet successfully (`Sorbet typechecker 0.6.0`). Traced the bug to `DefLocSaver.cc` — the AST walker that emits LSP query responses has no handler for `Send` nodes, meaning `alias_method` calls are completely invisible to the query system.
 
-Also found the test file at `packages/modules/caching/src/utils/__tests__/parser.test.ts`. There's already a test for the `updated` operation — and it explicitly asserts the broken behavior. That means the fix touches two files: the source and the test. Ready to move into Phase III.
+### Week 3 Progress
+
+Implemented the fix. Key decisions made along the way:
+
+- **Wrong approach first:** Initially tried adding alias symbols to the `symbols` list in `references.cc`. This returned the wrong source location (the whole alias method definition, not the `:foo` argument specifically).
+- **Right approach:** Add a `postTransformSend` to `DefLocSaver.cc`. This is where other node types are handled, and it allows emitting a response at the exact `:foo` argument location.
+- **`alias_method` desugaring:** Sorbet desugars `alias_method :bar1, :foo` to `self.alias_method(:bar1, :foo)` before `DefLocSaver` runs. The `:foo` arg is an `ast::Literal` with a `loc` field (not `loc()` — learned that from a compiler error).
+- **Finding the method:** Used `owner.data(ctx)->findMethodNoDealias(name)` to look up the method by name in the enclosing class without following alias chains.
 
 ### Code Changes
 
-- **Files modified:** *Phase III*
-- **Key commits:** *Phase III*
-- **Approach decisions:** *Will document as I make them*
+- **Files modified:** `main/lsp/DefLocSaver.cc`, `main/lsp/DefLocSaver.h`
+- **File added:** `test/testdata/lsp/alias_method_references.rb`
+- **Key commit:** [fix/lsp-alias-references](https://github.com/p2rez/sorbet/tree/fix/lsp-alias-references)
 
 ---
 
 ## Pull Request
 
-**PR Link:** *Phase IV*
+**PR Link:** *Phase IV — to be opened*
 
-**PR Description:** *Will draft before submitting*
+**PR Description:** *Draft being prepared*
 
 **Maintainer Feedback:**
 - *To be updated*
 
-**Status:** Not yet submitted
+**Status:** Branch pushed, ready to open PR
 
 ---
 
@@ -210,7 +221,8 @@ Also found the test file at `packages/modules/caching/src/utils/__tests__/parser
 
 ## Resources Used
 
-- [medusajs/medusa Issue #14903](https://github.com/medusajs/medusa/issues/14903)
-- [Medusa Contribution Guidelines](https://github.com/medusajs/medusa/blob/develop/CONTRIBUTING.md)
-- [Medusa Caching Module source](https://github.com/medusajs/medusa/tree/develop/packages/modules/caching)
-- *More to be added as I go*
+- [sorbet/sorbet Issue #9447](https://github.com/sorbet/sorbet/issues/9447)
+- [Sorbet LSP source — main/lsp/](https://github.com/sorbet/sorbet/tree/master/main/lsp)
+- [Sorbet DefLocSaver source](https://github.com/sorbet/sorbet/blob/master/main/lsp/DefLocSaver.cc)
+- [sorbet.run — interactive playground](https://sorbet.run)
+- [Bazelisk — Bazel version manager](https://github.com/bazelbuild/bazelisk)
