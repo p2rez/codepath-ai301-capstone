@@ -1,4 +1,4 @@
-# Contribution 2: `textDocument/references` does not treat alias definitions as references of a given symbol
+# Contribution 1: `textDocument/references` does not treat alias definitions as references of a given symbol
 
 **Contribution Number:** 2  
 **Student:** Christian Perez  
@@ -226,3 +226,58 @@ Implemented the fix. Key decisions made along the way:
 - [Sorbet DefLocSaver source](https://github.com/sorbet/sorbet/blob/master/main/lsp/DefLocSaver.cc)
 - [sorbet.run — interactive playground](https://sorbet.run)
 - [Bazelisk — Bazel version manager](https://github.com/bazelbuild/bazelisk)
+
+
+
+
+
+
+
+## Contribution Number: 2
+**Student** : Christian Perez
+**Issue**: manyfold3d/manyfold #6440
+**Status**: Phase II — In Progress
+
+## Why I Chose This Issue
+Manyfold is a self-hosted 3D model asset manager, and this issue asks for integration with Repetier-Server, a popular 3D printer management platform. I wanted a contribution that involved integrating with a real external API, and this one had a clear template to follow from a recently merged PR (#6432 — PrusaLink support). The maintainer (Floppy) left a detailed step-by-step guide for exactly how to implement a new printer service, which made it a great learning opportunity without being completely open-ended.
+Understanding the Issue
+## Problem Description
+Manyfold supports sending print files directly to connected 3D printers. Support exists for OctoPrint, Moonraker/Klipper, PrusaLink, and Odyssey. Repetier-Server is a widely used printer management platform with its own REST API, but Manyfold has no integration for it yet.
+## Expected Behavior
+Users with a Repetier-Server instance should be able to configure it as a print host in Manyfold's settings and send GCODE files directly to it from the file menu.
+Current Behavior
+Repetier-Server is not listed as a supported protocol. There is no service class, no spec, and no translation key for it.
+## Affected Components
+## Language: Ruby (Rails)
+## Files to add: app/services/print/repetier_service.rb, spec/services/print/repetier_service_spec.rb
+## Relevant area: Manyfold's print service layer
+## Solution Approach
+## Analysis
+Manyfold's print system uses a simple service pattern. Each printer protocol is a class in app/services/print/ that implements two methods: ok? (connectivity check) and upload (file transfer). The PrintHost model dynamically loads the right service based on the protocol string. Adding Repetier support means adding a new service class that speaks the Repetier REST API.
+The Repetier API uses:
+
+GET /printer/info — to verify connectivity and get the list of active printers and their slugs
+POST /printer/model/<slug>?a=upload — to upload a GCODE file to a specific printer
+GET /printer/api/<slug>?a=copyModel — to queue the uploaded model for printing
+
+Authentication is via x-api-key header or apikey query parameter.
+Implementation Plan
+
+Create app/services/print/repetier_service.rb following the PrusaLink pattern
+Implement ok? using GET /printer/info
+Implement upload by: checking connectivity, fetching the first active printer slug from the info response, uploading the file, then optionally queuing it for printing via copyModel
+Create spec/services/print/repetier_service_spec.rb following the PrusaLink spec pattern
+Add translation key via bundle exec i18n-tasks add-missing --nil-value and set the name in en.yml
+Run rubocop to fix any style issues
+Open PR
+
+## Testing Strategy
+
+## Spec covers: connection verification, file upload, bad API key, bad endpoint
+VCR cassettes will record real API interactions for reproducible tests
+Full test suite must pass before PR
+
+## Implementation Notes
+Week 1 Progress
+Identified issue #6440 in manyfold3d/manyfold — adding Repetier-Server print support. Studied the merged PrusaLink PR (#6432) which serves as the template. Floppy left a detailed 9-step guide in the PR description. Read the Repetier API docs and mapped out the endpoints needed. Created service and spec files locally.
+## Status: In Progress — setting up Ruby environment (rbenv) to run bundle install and i18n-tasks.
