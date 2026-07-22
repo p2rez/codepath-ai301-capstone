@@ -1,6 +1,6 @@
 # Contribution 1: `textDocument/references` does not treat alias definitions as references of a given symbol
 
-**Contribution Number:** 2  
+**Contribution Number:** 1  
 **Student:** Christian Perez  
 **Issue:** [sorbet/sorbet #9447](https://github.com/sorbet/sorbet/issues/9447)  
 **Status:** Phase IV — Awaiting Review
@@ -182,6 +182,10 @@ Implemented the fix. Key decisions made along the way:
 - **`alias_method` desugaring:** Sorbet desugars `alias_method :bar1, :foo` to `self.alias_method(:bar1, :foo)` before `DefLocSaver` runs. The `:foo` arg is an `ast::Literal` with a `loc` field (not `loc()` — learned that from a compiler error).
 - **Finding the method:** Used `owner.data(ctx)->findMethodNoDealias(name)` to look up the method by name in the enclosing class without following alias chains.
 
+### Week 4+ Progress
+
+Resolved a merge conflict with upstream's tree-walker API refactor — all `DefLocSaver` method signatures changed from `ast::ExpressionPtr &` to `const T &` typed references. Updated `postTransformSend` signature and removed the now-unnecessary `cast_tree_nonnull` call. Also addressed maintainer feedback: changed `< 2` to `!= 2`, switched to `const auto &` for the lspQuery variable, removed `#include "core/Types.h"`, and added edge case tests for `alias_method` inside `def self.foo`. All 2243 tests still pass. Awaiting maintainer guidance on switching from `MethodDefResponse` to `SendResponse` for the usage site.
+
 ### Code Changes
 
 - **Files modified:** `main/lsp/DefLocSaver.cc`, `main/lsp/DefLocSaver.h`
@@ -197,9 +201,10 @@ Implemented the fix. Key decisions made along the way:
 **PR Description:** Added a `postTransformSend` handler to `DefLocSaver` that detects `alias_method` calls and emits a `MethodDefResponse` at the source argument location, so that `textDocument/references` includes alias definitions as references of the original method. Full test suite passes (2243/2243).
 
 **Maintainer Feedback:**
-- *Awaiting review*
+- Applied: `!= 2` guard, `const auto &` style, removed `#include "core/Types.h"`, edge case tests
+- Pending: Guidance on `SendResponse` vs `MethodDefResponse` for the usage site — asked jez directly on the PR, awaiting response
 
-**Status:** Awaiting review
+**Status:** Awaiting maintainer response on `SendResponse` question
 
 ---
 
@@ -227,57 +232,49 @@ Implemented the fix. Key decisions made along the way:
 - [sorbet.run — interactive playground](https://sorbet.run)
 - [Bazelisk — Bazel version manager](https://github.com/bazelbuild/bazelisk)
 
+---
 
+---
 
+# Contribution 2: Print via Repetier API (Withdrawn)
 
+**Contribution Number:** 2  
+**Student:** Christian Perez  
+**Issue:** [manyfold3d/manyfold #6440](https://github.com/manyfold3d/manyfold/issues/6440)  
+**Status:** Withdrawn — Project does not accept AI-assisted contributions
 
+---
 
+## Why This Contribution Was Withdrawn
 
-## Contribution Number: 2
-**Student** : Christian Perez
-**Issue**: manyfold3d/manyfold #6440
-**Status**: Phase II — In Progress
+After claiming this issue and beginning implementation, the project maintainer (Floppy) left the following comment:
 
-## Why I Chose This Issue
-Manyfold is a self-hosted 3D model asset manager, and this issue asks for integration with Repetier-Server, a popular 3D printer management platform. I wanted a contribution that involved integrating with a real external API, and this one had a clear template to follow from a recently merged PR (#6432 — PrusaLink support). The maintainer (Floppy) left a detailed step-by-step guide for exactly how to implement a new printer service, which made it a great learning opportunity without being completely open-ended.
-Understanding the Issue
-## Problem Description
-Manyfold supports sending print files directly to connected 3D printers. Support exists for OctoPrint, Moonraker/Klipper, PrusaLink, and Odyssey. Repetier-Server is a widely used printer management platform with its own REST API, but Manyfold has no integration for it yet.
-## Expected Behavior
-Users with a Repetier-Server instance should be able to configure it as a print host in Manyfold's settings and send GCODE files directly to it from the file menu.
-Current Behavior
-Repetier-Server is not listed as a supported protocol. There is no service class, no spec, and no translation key for it.
-## Affected Components
-## Language: Ruby (Rails)
-## Files to add: app/services/print/repetier_service.rb, spec/services/print/repetier_service_spec.rb
-## Relevant area: Manyfold's print service layer
-## Solution Approach
-## Analysis
-Manyfold's print system uses a simple service pattern. Each printer protocol is a class in app/services/print/ that implements two methods: ok? (connectivity check) and upload (file transfer). The PrintHost model dynamically loads the right service based on the protocol string. Adding Repetier support means adding a new service class that speaks the Repetier REST API.
-The Repetier API uses:
+> "I note that you're looking at this for the CodePath AI301 course, which is about generating code with an LLM and contributing it to open source projects. Please note that this project does not accept AI-generated code. Please make sure you've read our contribution guidelines before going any further."
 
-GET /printer/info — to verify connectivity and get the list of active printers and their slugs
-POST /printer/model/<slug>?a=upload — to upload a GCODE file to a specific printer
-GET /printer/api/<slug>?a=copyModel — to queue the uploaded model for printing
+Out of respect for the project's policies, I withdrew from the issue immediately and did not submit a PR.
 
-Authentication is via x-api-key header or apikey query parameter.
-Implementation Plan
+This is an important real-world lesson in open source contribution: every project has its own norms and contribution guidelines, and it's the contributor's responsibility to read them before starting work. I should have checked the contributing guidelines before claiming the issue.
 
-Create app/services/print/repetier_service.rb following the PrusaLink pattern
-Implement ok? using GET /printer/info
-Implement upload by: checking connectivity, fetching the first active printer slug from the info response, uploading the file, then optionally queuing it for printing via copyModel
-Create spec/services/print/repetier_service_spec.rb following the PrusaLink spec pattern
-Add translation key via bundle exec i18n-tasks add-missing --nil-value and set the name in en.yml
-Run rubocop to fix any style issues
-Open PR
+---
 
-## Testing Strategy
+## What the Issue Was
 
-## Spec covers: connection verification, file upload, bad API key, bad endpoint
-VCR cassettes will record real API interactions for reproducible tests
-Full test suite must pass before PR
+Manyfold is a self-hosted 3D model asset manager that supports sending print files directly to connected 3D printers. Issue #6440 asked for integration with Repetier-Server, a popular 3D printer management platform. The maintainer (Floppy) had merged a PrusaLink implementation in PR #6432 and left a detailed 9-step guide for how to implement any new printer service, making this a well-scoped contribution opportunity.
 
-## Implementation Notes
-Week 1 Progress
-Identified issue #6440 in manyfold3d/manyfold — adding Repetier-Server print support. Studied the merged PrusaLink PR (#6432) which serves as the template. Floppy left a detailed 9-step guide in the PR description. Read the Repetier API docs and mapped out the endpoints needed. Created service and spec files locally.
-## Status: In Progress — setting up Ruby environment (rbenv) to run bundle install and i18n-tasks.
+## Work Completed Before Withdrawal
+
+- Read the Repetier Server API documentation
+- Studied the PrusaLink PR (#6432) as the implementation template
+- Created `app/services/print/repetier_service.rb` locally
+- Created `spec/services/print/repetier_service_spec.rb` locally
+- Set up rbenv and installed Ruby 3.3.0 to run the project locally
+
+No PR was opened. All local work was discarded after the maintainer's comment.
+
+---
+
+## Learnings
+
+- **Always read CONTRIBUTING.md before claiming an issue.** Different open source projects have different policies around AI-assisted development, and it's the contributor's responsibility to know them upfront.
+- **Withdraw gracefully.** When a policy conflict is discovered, the right move is to step back respectfully and without argument.
+- **This is a real-world skill.** Knowing when *not* to contribute is just as important as knowing how to contribute.
